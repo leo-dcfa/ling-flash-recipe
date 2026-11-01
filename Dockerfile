@@ -13,8 +13,9 @@ FROM nvidia/cuda:13.0.3-devel-ubuntu24.04@sha256:b7ae301dea2c162444795462ce17a05
 # uv, copied from its official image rather than piped from an install script.
 COPY --from=ghcr.io/astral-sh/uv:0.13.4@sha256:9f130421e930bfbdc563c00740466603f8723158e90297d07957c2294640262b /uv /usr/local/bin/uv
 
-# git to fetch the fork, a compiler for the few packages built from source,
-# procps because sparkrun checks on the server with ps.
+# git to fetch the fork. A compiler for the few packages built from source,
+# and for FlashInfer, which links the kernels it compiles when the server
+# starts. procps because sparkrun checks on the server with ps.
 RUN apt-get update \
  && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
       build-essential ca-certificates git procps \
