@@ -4,6 +4,7 @@
 #   - Humming MoE backend, instead of FlashInfer's MXFP4 kernel
 #   - a plain BF16 LM head: --enable-fp32-lm-head dropped, as in the cookbook's
 #     final run, so the FP8 head's gain is measured on its own
+#   - online FP8 LM head: the fork converts the BF16 head as it loads
 # git log -p ling-flash.yaml shows each change; results/ has each one's number.
 # Two values are copies of pins.env: the model revision, and the image tag,
 # which build.sh names after SGLANG_COMMIT.
@@ -24,7 +25,7 @@ solo_only: true
 container: ling-flash:sglang-079d404
 
 metadata:
-  description: Ling-3.0-flash MXFP4 (124B, 5.1B active) on one GB10, inclusionAI SGLang fork, Humming MoE, BF16 head
+  description: Ling-3.0-flash MXFP4 (124B, 5.1B active) on one GB10, inclusionAI SGLang fork, Humming MoE, FP8 head
   maintainer: leo
   source: https://github.com/leo-dcfa/ling-flash-recipe
 
@@ -46,7 +47,9 @@ env:
   SGLANG_ENABLE_JIT_DEEPGEMM: "0"
   SGLANG_DSV4_FP4_DEQUANT: "0"
   SGLANG_FP8_IGNORED_LAYERS: ""
-  SGLANG_ENABLE_FP8_LM_HEAD: "0"
+  # The fork's addition: convert the BF16 LM head to FP8 at load, so each
+  # token reads half the bytes there.
+  SGLANG_ENABLE_FP8_LM_HEAD: "1"
   # Humming compiles with NVRTC, inside the server process, as the cookbook
   # sets it. Its kernels are cached beside FlashInfer's.
   HUMMING_COMPILER: nvrtc
