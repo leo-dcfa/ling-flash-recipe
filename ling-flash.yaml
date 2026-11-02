@@ -1,13 +1,13 @@
 # Ling-3.0-flash-fp4 on one GB10, in the image build.sh makes.
-# This is the baseline: the cookbook's own baseline run (its kernel probe,
-# notebook cell 13 @ COOKBOOK_COMMIT), with FlashInfer's MXFP4 MoE kernel and
-# an FP32 LM head. Step 6 changes it one speedup per commit.
+# It starts from the cookbook's baseline run (its kernel probe, notebook
+# cell 13 @ COOKBOOK_COMMIT), then adds the speedups one commit at a time:
+#   - Humming MoE backend, instead of FlashInfer's MXFP4 kernel
+# git log -p ling-flash.yaml shows each change; results/ has each one's number.
 # Two values are copies of pins.env: the model revision, and the image tag,
 # which build.sh names after SGLANG_COMMIT.
 #
-# Before the first launch, compile the MoE kernel with the memory to itself:
-#   ./precompile.sh
-# Then:
+# Humming compiles its MoE kernels itself on first use and caches them, so
+# nothing needs precompiling. (precompile.sh is for the baseline, bd3afee.)
 #   sparkrun run ./ling-flash.yaml --hosts localhost --no-follow
 # solo_only below makes it one node. --no-follow returns as soon as the server
 # starts, not when it's ready: poll http://127.0.0.1:8000/v1/models for that.
@@ -22,7 +22,7 @@ solo_only: true
 container: ling-flash:sglang-079d404
 
 metadata:
-  description: Ling-3.0-flash MXFP4 (124B, 5.1B active) on one GB10, inclusionAI SGLang fork, baseline
+  description: Ling-3.0-flash MXFP4 (124B, 5.1B active) on one GB10, inclusionAI SGLang fork, Humming MoE
   maintainer: leo
   source: https://github.com/leo-dcfa/ling-flash-recipe
 
@@ -45,11 +45,15 @@ env:
   SGLANG_DSV4_FP4_DEQUANT: "0"
   SGLANG_FP8_IGNORED_LAYERS: ""
   SGLANG_ENABLE_FP8_LM_HEAD: "0"
+  # Humming compiles with NVRTC, inside the server process, as the cookbook
+  # sets it. Its kernels are cached beside FlashInfer's.
+  HUMMING_COMPILER: nvrtc
+  HUMMING_CACHE_DIR: /cache/huggingface/ling-flash/humming
   # Compiled kernels go inside the mounted HF cache, so they survive restarts.
   # precompile.sh uses the same FlashInfer path.
   FLASHINFER_WORKSPACE_BASE: /cache/huggingface/ling-flash
   TRITON_CACHE_DIR: /cache/huggingface/ling-flash/triton
-  # If the MoE kernel wasn't precompiled, compile it one job at a time:
+  # If a FlashInfer kernel isn't cached yet, compile it one job at a time:
   # slow, but it can't run the box out of memory.
   MAX_JOBS: "1"
 
@@ -83,7 +87,7 @@ command: |
     --disable-flashinfer-autotune \
     --mem-fraction-static {gpu_memory_utilization} \
     --fp8-gemm-backend cutlass \
-    --moe-runner-backend flashinfer_mxfp4 \
+    --moe-runner-backend humming \
     --flashinfer-mxfp4-moe-precision default \
     --disable-shared-experts-fusion \
     --enable-fp32-lm-head \
