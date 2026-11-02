@@ -2,6 +2,8 @@
 # It starts from the cookbook's baseline run (its kernel probe, notebook
 # cell 13 @ COOKBOOK_COMMIT), then adds the speedups one commit at a time:
 #   - Humming MoE backend, instead of FlashInfer's MXFP4 kernel
+#   - a plain BF16 LM head: --enable-fp32-lm-head dropped, as in the cookbook's
+#     final run, so the FP8 head's gain is measured on its own
 # git log -p ling-flash.yaml shows each change; results/ has each one's number.
 # Two values are copies of pins.env: the model revision, and the image tag,
 # which build.sh names after SGLANG_COMMIT.
@@ -22,7 +24,7 @@ solo_only: true
 container: ling-flash:sglang-079d404
 
 metadata:
-  description: Ling-3.0-flash MXFP4 (124B, 5.1B active) on one GB10, inclusionAI SGLang fork, Humming MoE
+  description: Ling-3.0-flash MXFP4 (124B, 5.1B active) on one GB10, inclusionAI SGLang fork, Humming MoE, BF16 head
   maintainer: leo
   source: https://github.com/leo-dcfa/ling-flash-recipe
 
@@ -90,5 +92,4 @@ command: |
     --moe-runner-backend humming \
     --flashinfer-mxfp4-moe-precision default \
     --disable-shared-experts-fusion \
-    --enable-fp32-lm-head \
     --json-model-override-args '{"max_position_embeddings":262144,"rope_scaling":{"rope_type":"yarn","factor":2.0,"rope_theta":6000000,"partial_rotary_factor":0.5,"original_max_position_embeddings":131072}}'
