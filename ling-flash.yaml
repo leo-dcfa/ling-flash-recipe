@@ -1,0 +1,90 @@
+# Ling-3.0-flash-fp4 on one GB10, in the image build.sh makes.
+# This is the baseline: the cookbook's own baseline run (its kernel probe,
+# notebook cell 13 @ COOKBOOK_COMMIT), with FlashInfer's MXFP4 MoE kernel and
+# an FP32 LM head. Step 6 changes it one speedup per commit.
+# Two values are copies of pins.env: the model revision, and the image tag,
+# which build.sh names after SGLANG_COMMIT.
+#
+# Before the first launch, compile the MoE kernel with the memory to itself:
+#   ./precompile.sh
+# Then:
+#   sparkrun run ./ling-flash.yaml --hosts localhost --no-follow
+# solo_only below makes it one node. --no-follow returns as soon as the server
+# starts, not when it's ready: poll http://127.0.0.1:8000/v1/models for that.
+
+recipe_version: "2"
+model: inclusionAI/Ling-3.0-flash-fp4
+# sparkrun downloads this revision; the command passes it on to SGLang,
+# which would otherwise look for "main". Written once, used twice (&, *).
+model_revision: &revision 3bae1cf4011b48475b2cc038fff283af49053ebc
+runtime: sglang
+solo_only: true
+container: ling-flash:sglang-079d404
+
+metadata:
+  description: Ling-3.0-flash MXFP4 (124B, 5.1B active) on one GB10, inclusionAI SGLang fork, baseline
+  maintainer: leo
+  source: https://github.com/leo-dcfa/ling-flash-recipe
+
+defaults:
+  revision: *revision
+  served_model_name: ling-3.0-flash
+  # Reachable from f31f only, for now. LiteLLM comes later.
+  host: 127.0.0.1
+  port: 8000
+  # 0.75 "risks GPU OOM and driver lockups" under memory pressure, says the
+  # cookbook, so 0.68 as it recommends.
+  gpu_memory_utilization: 0.68
+  max_model_len: 262144
+
+env:
+  # The cookbook's environment for this run.
+  SGLANG_ALLOW_OVERWRITE_LONGER_CONTEXT_LEN: "1"
+  SGLANG_JIT_DEEPGEMM_PRECOMPILE: "0"
+  SGLANG_ENABLE_JIT_DEEPGEMM: "0"
+  SGLANG_DSV4_FP4_DEQUANT: "0"
+  SGLANG_FP8_IGNORED_LAYERS: ""
+  SGLANG_ENABLE_FP8_LM_HEAD: "0"
+  # Compiled kernels go inside the mounted HF cache, so they survive restarts.
+  # precompile.sh uses the same FlashInfer path.
+  FLASHINFER_WORKSPACE_BASE: /cache/huggingface/ling-flash
+  TRITON_CACHE_DIR: /cache/huggingface/ling-flash/triton
+  # If the MoE kernel wasn't precompiled, compile it one job at a time:
+  # slow, but it can't run the box out of memory.
+  MAX_JOBS: "1"
+
+# The cookbook's flags, in its order. Its --api-key is left out: the server
+# listens on localhost only, and sparkrun's health check sends no key.
+command: |
+  python3 -m sglang.launch_server \
+    --model-path {model} \
+    --revision {revision} \
+    --served-model-name {served_model_name} \
+    --trust-remote-code \
+    --dtype bfloat16 \
+    --tp-size 1 \
+    --ep-size 1 \
+    --host {host} \
+    --port {port} \
+    --max-running-requests 1 \
+    --max-mamba-cache-size 64 \
+    --chunked-prefill-size 8192 \
+    --max-prefill-tokens 16384 \
+    --page-size 64 \
+    --context-length {max_model_len} \
+    --cuda-graph-backend-decode full \
+    --cuda-graph-max-bs-decode 1 \
+    --cuda-graph-bs-decode 1 \
+    --cuda-graph-backend-prefill disabled \
+    --random-seed 308534008 \
+    --reasoning-parser deepseek-r1 \
+    --tool-call-parser qwen25 \
+    --attention-backend flashinfer \
+    --disable-flashinfer-autotune \
+    --mem-fraction-static {gpu_memory_utilization} \
+    --fp8-gemm-backend cutlass \
+    --moe-runner-backend flashinfer_mxfp4 \
+    --flashinfer-mxfp4-moe-precision default \
+    --disable-shared-experts-fusion \
+    --enable-fp32-lm-head \
+    --json-model-override-args '{"max_position_embeddings":262144,"rope_scaling":{"rope_type":"yarn","factor":2.0,"rope_theta":6000000,"partial_rotary_factor":0.5,"original_max_position_embeddings":131072}}'
